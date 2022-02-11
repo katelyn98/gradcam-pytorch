@@ -138,6 +138,7 @@ class GradCAM(_BaseWrapper):
             raise ValueError("Invalid layer name: {}".format(target_layer))
 
     def generate(self, target_layer):
+        # print(self.fmap_pool.keys())
         fmaps = self._find(self.fmap_pool, target_layer)
         grads = self._find(self.grad_pool, target_layer)
         weights = F.adaptive_avg_pool2d(grads, 1)

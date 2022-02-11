@@ -9,6 +9,15 @@ from __future__ import print_function
 
 import copy
 import os.path as osp
+import os
+
+from PIL import Image
+
+import matplotlib.pyplot as plt
+from skimage.segmentation import mark_boundaries
+
+from skimage import color
+
 
 import click
 import cv2
@@ -25,6 +34,60 @@ from grad_cam import (
     GuidedBackPropagation,
     occlusion_sensitivity,
 )
+
+TARGET_CLASSES = {'acousticGuitar.jpg': 402, 
+                  'artichoke.jpg': 944, 
+                  'snake.jpg': 56, 
+                  'bee.jpg': 309, 
+                  'bellPepper.jpg': 945, 
+                  'bicycle.jpg': 444, 
+                  'broccoli.jpg': 937, 
+                  'camera.jpg': 759, 
+                  'canoe.jpg': 472, 
+                  'car.jpg': 705, 
+                  'castle.jpg': 483, 
+                  'cat.jpg': 281, 
+                  'corn.jpg': 987, 
+                  'cucumber.jpg': 943, 
+                  'dog.jpg': 267, 
+                  'dogs.jpg': 199, 
+                  'drum.jpg': 822, 
+                  'electricFan.jpg': 545, 
+                  'fig.jpg': 952, 
+                  'flute.jpg': 558, 
+                  'frog.jpg': 31, 
+                  'harmonica.jpg': 593, 
+                  'jellyfish.jpg': 107,
+                  'keyboard.jpg': 508, 
+                  'kingSnake.jpg': 56, 
+                  'laptop.jpg': 620, 
+                  'mudturtle.jpg': 35, 
+                  'orange.jpg': 950, 
+                  'parrot.jpg': 88, 
+                  'piano.jpg': 579, 
+                  'pineapple.jpg': 953, 
+                  'pomegranate.jpg': 957, 
+                  'seaAnemone.jpg': 108, 
+                  'soccerball.jpg': 805, 
+                  'sock.jpg': 806, 
+                  'spiderMonkey.jpg': 381, 
+                  'starfish.jpg': 327, 
+                  'strawberry.jpg': 949, 
+                  'tiger.jpg': 292, 
+                  'toaster.jpg': 859, 
+                  'tractor.jpg': 866, 
+                  'train.jpg': 705, 
+                  'trumpet.jpg': 513, 
+                  'turtle.jpg': 33, 
+                  'violin.jpg': 889, 
+                  'warplane.jpg': 895, 
+                  'mudturtle.jpg' : 35
+                #   'acorn.jpg':988,
+                #   'asparagus.jpg':
+                #   'lettuce.jpg':
+                #   'raspberry.jpg':
+                #   'sunflower.jpg': 
+            }
 
 # if a model includes LSTM, such as in image captioning,
 # torch.backends.cudnn.enabled = False
@@ -51,6 +114,27 @@ def load_images(image_paths):
         images.append(image)
         raw_images.append(raw_image)
     return images, raw_images
+
+def load_images_from_folder(folder_path):
+    images = []
+    raw_images = []
+    target_classes = []
+    names = []
+    print("Images:")
+    imgs = os.listdir(folder_path)
+
+    for i, image_path in enumerate(imgs):
+        image_name = image_path
+        if (image_name in TARGET_CLASSES):
+            names.append(image_name.split('.')[0])
+            image_path = folder_path + image_path
+            print("\t#{}: {}".format(i, image_path))
+            image, raw_image = preprocess(image_path)
+            images.append(image)
+            raw_images.append(raw_image)
+            target_classes.append([TARGET_CLASSES[image_name]])
+
+    return images, raw_images, target_classes, names
 
 
 def get_classtable():
@@ -83,15 +167,127 @@ def save_gradient(filename, gradient):
     cv2.imwrite(filename, np.uint8(gradient))
 
 
-def save_gradcam(filename, gcam, raw_image, paper_cmap=False):
+def save_gradcam(filepath, gcam, raw_image, paper_cmap=False):
     gcam = gcam.cpu().numpy()
-    cmap = cm.jet_r(gcam)[..., :3] * 255.0
+    maskpos = np.zeros(gcam.shape)
+    maskneg = np.zeros(gcam.shape)
+
+    top_five = []
+    bottom_five = []
+
+
+    # mask[mask >= 0.8] = 0
+    # mask[(mask >= 0.6) & (mask < 0.8) ] = 1 
+    # mask[(mask >= 0.4) & (mask < 0.6) ] = 2
+    # mask[(mask >= 0.2) & (mask < 0.4) ] = 3
+    # mask[(mask >= 0.10) & (mask < 0.2) ] = 4
+
+    # mask[(mask >= 0.05) & (mask < 0.10) ] = 5
+    # mask[(mask >= 0.010) & (mask < 0.05) ] = 6
+
+    # mask[mask < 0.010 ] = 7
+    alpha = np.full((gcam.shape[0], gcam.shape[1]), 255) 
+
+    print(raw_image.shape)
+    raw_image = np.dstack((raw_image, alpha))
+    print(raw_image.shape)
+
+    for i in range(0, 5):
+        upper = (i * 5000)
+        lower = (i+1) * 5000
+        # print(-lower, -upper)
+        if (upper == 0):
+            ii = np.unravel_index(np.argsort(gcam.ravel())[-lower:], gcam.shape)
+        else:
+            ii = np.unravel_index(np.argsort(gcam.ravel())[-lower:-upper], gcam.shape)
+        
+        tempmask = np.ones(gcam.shape).astype(int)
+        tempmask[ii] = 0
+        tempimg = np.copy(raw_image)
+        tempimg[tempmask == 1] = [255,255,255,0]
+    
+        top_five.append(tempimg)
+
+
+    for i in range(0, 5):
+        upper = (i+1) * 5000
+        lower = (i) * 5000
+        # print(lower, upper)
+        ii = np.unravel_index(np.argsort(gcam.ravel())[lower:upper], gcam.shape)
+        maskneg[ii] = i+1
+    
+        tempmask = np.ones(gcam.shape).astype(int)
+        tempmask[ii] = 0
+        tempimg = np.copy(raw_image)
+        tempimg[tempmask == 1] = [255,255,255,0]
+    
+        bottom_five.append(tempimg)
+
+
+
+    # threshold = np.sort(mask.ravel())[-5000]
+
+    # mask[mask < threshold] = 0
+    # mask[mask >= threshold] = 1
+    # print(mask)
+
+
+
+    # print(mask)
+    # temp = mask.reshape(50176)
+    
+    # plt.hist(temp,  bins=10)
+    # plt.savefig('foo.png')
+
+    # cmap = cm.jet_r(gcam)[..., :3] * 255.0
     if paper_cmap:
         alpha = gcam[..., None]
         gcam = alpha * cmap + (1 - alpha) * raw_image
     else:
-        gcam = (cmap.astype(np.float) + raw_image.astype(np.float)) / 2
-    cv2.imwrite(filename, np.uint8(gcam))
+        # gcam = (cmap.astype(np.float) + raw_image.astype(np.float)) / 2
+        # print(cmap.shape, raw_image.shape)
+
+        # cmap = cmap.reshape(224*224, 3)
+        # raw_image = raw_image.reshape(224*224, 3)
+        # print(raw_image)
+        # new_image = mark_boundaries(raw_image, np.uint8(mask))
+        # new_image_pos = color.label2rgb(maskpos, raw_image)
+        # new_image_neg = color.label2rgb(maskneg, raw_image)
+
+        # raw_image[mask == 0] = [255, 255, 255] 
+        # print(cm.jet())
+        # for (i, c) in enumerate(cmap):
+        #     if (not (c[2] > 200)): 
+        #         raw_image[i] = [0,0,0]
+        #         # cmap[i] = [0, 0, 0]
+        #     # else: 
+        #     #     print(c)
+            
+        # cmap = cmap.reshape(224, 224, 3)
+        # raw_image = raw_image.reshape(224, 224, 3)
+
+        # gcam = (cmap.astype(np.float) + raw_image.astype(np.float)) /2
+        # gcam =  raw_image.astype(np.float)
+        pass
+
+    filename = os.path.basename(filepath).split(".")[0]
+    directory = os.path.dirname(filepath) + "/" + filename
+    print(directory)
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+
+
+    for i, img in enumerate(bottom_five):
+        cv2.imwrite(directory + "/" + "bottom_"+str(i)+ ".png" , img)
+
+    for i, img in enumerate(top_five):
+        cv2.imwrite(directory + "/" + "top_"+str(i)+ ".png" , img)
+
+    # print(filename.split("."))
+
+
 
 
 def save_sensitivity(filename, maps):
@@ -120,13 +316,13 @@ def main(ctx):
 
 
 @main.command()
-@click.option("-i", "--image-paths", type=str, multiple=True, required=True)
+@click.option("-f", "--folder-path", type=str, multiple=False, required=True)
 @click.option("-a", "--arch", type=click.Choice(model_names), required=True)
 @click.option("-t", "--target-layer", type=str, required=True)
 @click.option("-k", "--topk", type=int, default=3)
 @click.option("-o", "--output-dir", type=str, default="./results")
 @click.option("--cuda/--cpu", default=True)
-def demo1(image_paths, target_layer, arch, topk, output_dir, cuda):
+def demo1(folder_path, target_layer, arch, topk, output_dir, cuda):
     """
     Visualize model responses given multiple images
     """
@@ -142,7 +338,8 @@ def demo1(image_paths, target_layer, arch, topk, output_dir, cuda):
     model.eval()
 
     # Images
-    images, raw_images = load_images(image_paths)
+    images, raw_images, target_classes, names = load_images_from_folder(folder_path)
+    print(target_classes)
     images = torch.stack(images).to(device)
 
     """
@@ -154,52 +351,52 @@ def demo1(image_paths, target_layer, arch, topk, output_dir, cuda):
     """
 
     # =========================================================================
-    print("Vanilla Backpropagation:")
+
 
     bp = BackPropagation(model=model)
     probs, ids = bp.forward(images)  # sorted
+    # print("Vanilla Backpropagation:")
+    # for i in range(topk):
+    #     bp.backward(ids=ids[:, [i]])
+    #     gradients = bp.generate()
 
-    for i in range(topk):
-        bp.backward(ids=ids[:, [i]])
-        gradients = bp.generate()
+    #     # Save results as image files
+    #     for j in range(len(images)):
+    #         print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, i]], probs[j, i]))
 
-        # Save results as image files
-        for j in range(len(images)):
-            print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, i]], probs[j, i]))
+    #         save_gradient(
+    #             filename=osp.join(
+    #                 output_dir,
+    #                 "{}-{}-vanilla-{}.png".format(j, arch, classes[ids[j, i]]),
+    #             ),
+    #             gradient=gradients[j],
+    #         )
 
-            save_gradient(
-                filename=osp.join(
-                    output_dir,
-                    "{}-{}-vanilla-{}.png".format(j, arch, classes[ids[j, i]]),
-                ),
-                gradient=gradients[j],
-            )
+    # # Remove all the hook function in the "model"
+    # bp.remove_hook()
 
-    # Remove all the hook function in the "model"
-    bp.remove_hook()
+    # # =========================================================================
+    # print("Deconvolution:")
 
-    # =========================================================================
-    print("Deconvolution:")
+    # deconv = Deconvnet(model=model)
+    # _ = deconv.forward(images)
 
-    deconv = Deconvnet(model=model)
-    _ = deconv.forward(images)
+    # for i in range(topk):
+    #     deconv.backward(ids=ids[:, [i]])
+    #     gradients = deconv.generate()
 
-    for i in range(topk):
-        deconv.backward(ids=ids[:, [i]])
-        gradients = deconv.generate()
+    #     for j in range(len(images)):
+    #         print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, i]], probs[j, i]))
 
-        for j in range(len(images)):
-            print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, i]], probs[j, i]))
+    #         save_gradient(
+    #             filename=osp.join(
+    #                 output_dir,
+    #                 "{}-{}-deconvnet-{}.png".format(j, arch, classes[ids[j, i]]),
+    #             ),
+    #             gradient=gradients[j],
+    #         )
 
-            save_gradient(
-                filename=osp.join(
-                    output_dir,
-                    "{}-{}-deconvnet-{}.png".format(j, arch, classes[ids[j, i]]),
-                ),
-                gradient=gradients[j],
-            )
-
-    deconv.remove_hook()
+    # deconv.remove_hook()
 
     # =========================================================================
     print("Grad-CAM/Guided Backpropagation/Guided Grad-CAM:")
@@ -210,49 +407,62 @@ def demo1(image_paths, target_layer, arch, topk, output_dir, cuda):
     gbp = GuidedBackPropagation(model=model)
     _ = gbp.forward(images)
 
-    for i in range(topk):
+    ids_ = torch.LongTensor(target_classes).to(device)
+    ids = ids_
+    # for i in range(topk):
         # Guided Backpropagation
-        gbp.backward(ids=ids[:, [i]])
-        gradients = gbp.generate()
+    gbp.backward(ids=ids_)
+    gradients = gbp.generate()
+
+    # Grad-CAM
+    gcam.backward(ids=ids_)
+    regions = gcam.generate(target_layer=target_layer)
+
+    for j in range(len(images)):
+        print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, 0]], probs[j, 0]))
+
+        # Guided Backpropagation
+        # save_gradient(
+        #     filename=osp.join(
+        #         output_dir,
+        #         "{}-{}-guided-{}.png".format(j, arch, classes[ids[j, 0]]),
+        #     ),
+        #     gradient=gradients[j],
+        # )
 
         # Grad-CAM
-        gcam.backward(ids=ids[:, [i]])
-        regions = gcam.generate(target_layer=target_layer)
-
-        for j in range(len(images)):
-            print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, i]], probs[j, i]))
-
-            # Guided Backpropagation
-            save_gradient(
-                filename=osp.join(
-                    output_dir,
-                    "{}-{}-guided-{}.png".format(j, arch, classes[ids[j, i]]),
+        # save_gradcam(
+        #     filename=osp.join(
+        #         output_dir,
+        #         "{}-{}-gradcam-{}-{}.png".format(
+        #             j, arch, target_layer, classes[ids[j, 0]]
+        #         ),
+        #     ),
+        #     gcam=regions[j, 0],
+        #     raw_image=raw_images[j],
+        # )
+        save_gradcam(
+            filepath=osp.join(
+                output_dir,
+                "{}.png".format(
+                   names[j]
                 ),
-                gradient=gradients[j],
-            )
+            ),
+            gcam=regions[j, 0],
+            raw_image=raw_images[j],
+        )
 
-            # Grad-CAM
-            save_gradcam(
-                filename=osp.join(
-                    output_dir,
-                    "{}-{}-gradcam-{}-{}.png".format(
-                        j, arch, target_layer, classes[ids[j, i]]
-                    ),
-                ),
-                gcam=regions[j, 0],
-                raw_image=raw_images[j],
-            )
 
-            # Guided Grad-CAM
-            save_gradient(
-                filename=osp.join(
-                    output_dir,
-                    "{}-{}-guided_gradcam-{}-{}.png".format(
-                        j, arch, target_layer, classes[ids[j, i]]
-                    ),
-                ),
-                gradient=torch.mul(regions, gradients)[j],
-            )
+        # Guided Grad-CAM
+        # save_gradient(
+        #     filename=osp.join(
+        #         output_dir,
+        #         "{}-{}-guided_gradcam-{}-{}.png".format(
+        #             j, arch, target_layer, classes[ids[j, 0]]
+        #         ),
+        #     ),
+        #     gradient=torch.mul(regions, gradients)[j],
+        # )
 
 
 @main.command()

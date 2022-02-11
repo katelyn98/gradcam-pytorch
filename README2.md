@@ -1,0 +1,1 @@
+Run `python3 main.py demo1 -a googlenet -f imgs/ -t inception5b`
