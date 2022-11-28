@@ -420,7 +420,6 @@ def demo1(folder_path, target_layer, arch, topk, output_dir, cuda):
 
     for j in range(len(images)):
         print("\t#{}: {} ({:.5f})".format(j, classes[ids[j, 0]], probs[j, 0]))
-
         # Guided Backpropagation
         # save_gradient(
         #     filename=osp.join(
@@ -480,13 +479,31 @@ def demo2(image_paths, output_dir, cuda):
     classes = get_classtable()
 
     # Model
-    model = models.resnet152(pretrained=True)
+    # model = models.resnet152(pretrained=True)
+    model = models.googlenet(pretrained=True)
     model.to(device)
     model.eval()
 
     # The four residual layers
-    target_layers = ["relu", "layer1", "layer2", "layer3", "layer4"]
-    target_class = 243  # "bull mastif"
+    # target_layers = ["relu", "layer1", "layer2", "layer3", "layer4"]
+    target_layers = ["inception5b"]
+    # target_class = 243  # "bull mastif"
+    # target_class = 889 # violin
+    # target_class2 = 486 # cello
+    # target_class2 = 943 #cucumber
+    # target_class = 939 #zucchini
+    # target_class2 = 937 # broccoli
+    # target_class = 938 #cauliflower
+    # target_class2 = 558
+    # target_class = 683
+    # target_class2 = 35
+    # target_class = 36
+    # target_class2 = 444
+    # target_class = 671
+    # target_class = 620
+    # target_class2 = 664
+    target_class2 = 987
+    target_class = 998
 
     # Images
     images, raw_images = load_images(image_paths)
@@ -511,10 +528,10 @@ def demo2(image_paths, output_dir, cuda):
             )
 
             save_gradcam(
-                filename=osp.join(
+                filepath=osp.join(
                     output_dir,
                     "{}-{}-gradcam-{}-{}.png".format(
-                        j, "resnet152", target_layer, classes[target_class]
+                        j, "googlenet", target_layer, classes[target_class]
                     ),
                 ),
                 gcam=regions[j, 0],
